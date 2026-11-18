@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {readFile} from 'node:fs/promises';
 import {test} from 'node:test';
 import {chromium} from 'playwright';
 
@@ -47,6 +48,8 @@ test('Der Embed-Prefix gewährt nur Zugriff auf freigegebene Lese-Endpunkte', as
         ['ows/somap?REQUEST=GetCapabilities', 400],
         ['ows/somap?REQUEST=GetMap&request=GetMap', 400],
         ['api/v1/featureinfo/somap?request=GetFeatureInfo&filter=other', 400],
+        ['api/v1/document/%2e%2e%2fother.pdf', 404],
+        ['api/v1/document/grundstuecksbeschrieb.pdf?feature=1&crs=EPSG%3A2056&x=1&y=1&url=other', 400],
         ['config.json', 405, 'POST']
     ];
     for (const [path, status, method] of cases) {
@@ -165,4 +168,48 @@ test('README-Layerliste, externer WMS und Vollkartenlink nach Verschieben und Zo
     const reloaded = mapResponse(page);
     await page.reload();
     checkExtent(await reloaded, actual.get('c').split(',').map(Number), Number(actual.get('s')));
+});
+
+test('Kleine iframe-Karte zeigt mehrere Objektinformationen und lädt das Objektblatt', async t => {
+    const browser = await chromium.launch();
+    t.after(() => browser.close());
+    const page = await browser.newPage({
+        viewport: {width: 400, height: 320},
+        isMobile: true,
+        hasTouch: true,
+        userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1'
+    });
+    const url = entry({l: `${parcel},${groundwater}[50],${hidden}!`, c: '2607739,1228426', s: '2000'});
+    const map = mapResponse(page);
+    await page.setContent(`<meta name="viewport" content="width=device-width, initial-scale=1"><iframe title="Karte" width="265" height="174" src="${url.replaceAll('&', '&amp;')}"></iframe>`);
+    await map;
+    const frame = page.frameLocator('iframe');
+    const identify = page.waitForResponse(response => response.ok() && response.url().includes('/featureinfo/somap?'));
+    await frame.locator('.ol-viewport').tap({position: {x: 132, y: 87}});
+    const response = await identify;
+    const params = new URL(response.url()).searchParams;
+    assert.deepEqual(new Set(params.get('query_layers').split(',')), new Set([groundwater, parcel]));
+    const xml = await response.text();
+    assert.match(xml, /<HtmlContent inline="1">/);
+    assert.match(xml, /featurereport="grundstuecksbeschrieb\/grundstuecksbeschrieb"/);
+    await frame.getByText('Bohrtiefenabfrage Erdwärmesonden', {exact: true}).waitFor();
+    await frame.getByText('Grundstücke', {exact: true}).waitFor();
+    await frame.getByText('2 Objekt(e)', {exact: true}).waitFor();
+    const dialog = await frame.locator('.resizeable-window').boundingBox();
+    const fullMap = await frame.getByRole('link', {name: 'In geo.so.ch/map ansehen'}).boundingBox();
+    assert.ok(dialog.y + dialog.height <= fullMap.y);
+    assert.ok(dialog.width <= 265);
+    assert.match(await frame.getByRole('link', {name: 'https://dox42.so.ch'}).getAttribute('href'), /^https:\/\/dox42\.so\.ch\//);
+    const link = frame.getByRole('link', {name: 'Link', exact: true});
+    const reportUrl = new URL(await link.getAttribute('href'), embed);
+    assert.equal(reportUrl.origin, embed.origin);
+    assert.equal(reportUrl.pathname, '/api/embed/v2/api/v1/document/grundstuecksbeschrieb/grundstuecksbeschrieb.pdf');
+    const download = page.waitForEvent('download');
+    await link.tap();
+    const report = await download;
+    assert.equal(report.suggestedFilename(), 'grundstuecksbeschrieb.pdf');
+    const pdf = await readFile(await report.path());
+    assert.equal(pdf.subarray(0, 5).toString(), '%PDF-');
+    await frame.getByTitle('Schliessen', {exact: true}).tap();
+    await frame.getByText('Objektinformationen', {exact: true}).waitFor({state: 'hidden'});
 });

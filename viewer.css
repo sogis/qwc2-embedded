@@ -25,3 +25,8 @@ body:has(.ol-viewport) #loading {
     bottom: 0;
     right: 0;
 }
+
+/* Keep the full-map link clear of the Identify window in low embeds. */
+#container .resizeable-window {
+    max-height: calc(100% - 24px) !important;
+}

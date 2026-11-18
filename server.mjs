@@ -8,6 +8,8 @@ const dataproductPath = 'api/dataproduct/v1/';
 const documentPath = 'api/v1/document/';
 const mapPath = 'ows/somap';
 const identifyPath = 'api/v1/featureinfo/somap';
+const reportPath = /^api\/v1\/document\/(?:[\w-]+\/)*[\w-]+\.pdf$/;
+const reportQuery = new Set(['feature', 'x', 'y', 'crs', 'single_report']);
 const backgrounds = new Set(['hintergrundkarte_sw', 'hintergrundkarte_farbig', 'hintergrundkarte_ortho']);
 const tiles = new RegExp(String.raw`^api/wmts/1\.0\.0/ch\.so\.agi\.(?:${[...backgrounds].join('|')})/default/2056/\d+/\d+/\d+\.png$`);
 const mapQuery = new Set('service request version layers styles format transparent width height bbox crs srs dpi format_options map_resolution opacities tiled __t'.split(' '));
@@ -37,7 +39,7 @@ function configForEmbed(config) {
         assetsPath: prefix + 'assets',
         translationsPath: prefix + 'translations',
         dataproductServiceUrl: prefix + dataproductPath,
-        documentServiceUrl: geo + '/' + documentPath,
+        documentServiceUrl: prefix + documentPath,
         username: null,
         user_infos: {},
         allowFractionalZoom: true
@@ -74,6 +76,15 @@ function serviceQuery(route, parameters) {
     if (tiles.test(route)) return parameters.size ? null : '';
     if (route === dataproductPath + 'weblayers') {
         return parameters.size === 1 && parameters.get('filter') ? '?' + parameters : null;
+    }
+    if (reportPath.test(route)) {
+        const {feature, x, y, crs, single_report: single} = Object.fromEntries(parameters);
+        if (parameters.size !== new Set(parameters.keys()).size ||
+            ![...parameters.keys()].every(key => reportQuery.has(key)) ||
+            !/^[\w.-]+$/.test(feature ?? '') || crs !== 'EPSG:2056' ||
+            ![x, y].every(value => value?.trim() && Number.isFinite(Number(value))) ||
+            (single !== undefined && single !== 'true' && single !== 'false')) return null;
+        return '?' + parameters;
     }
     const allowed = route === mapPath ? mapQuery : identifyQuery;
     const request = route === mapPath ? 'getmap' : 'getfeatureinfo';
@@ -112,14 +123,25 @@ createServer(async (req, res) => {
             const config = route === 'config.json' ? configForEmbed(data) : themesForEmbed(data);
             return res.writeHead(200, {'Content-Type': 'application/json'}).end(JSON.stringify(config));
         }
-        if (route !== mapPath && route !== identifyPath && route !== dataproductPath + 'weblayers' && !tiles.test(route)) {
+        const report = reportPath.test(route);
+        if (route !== mapPath && route !== identifyPath && route !== dataproductPath + 'weblayers' && !tiles.test(route) && !report) {
             return res.writeHead(404).end();
         }
         const query = serviceQuery(route, url.searchParams);
         if (query === null) return res.writeHead(400).end();
         const source = await upstream(route + query);
-        res.writeHead(source.status, {'Content-Type': source.headers.get('content-type') || 'application/octet-stream'});
-        await pipeline(source.body, res);
+        const contentType = source.headers.get('content-type') || 'application/octet-stream';
+        if (report) {
+            if (!source.ok || contentType.split(';')[0] !== 'application/pdf') {
+                await source.body?.cancel();
+                return res.writeHead(source.ok ? 502 : source.status).end('Das Objektblatt konnte nicht geladen werden.');
+            }
+            res.setHeader('Content-Disposition', `attachment; filename="${route.split('/').at(-1)}"`);
+            res.setHeader('Cache-Control', 'no-store');
+        }
+        res.writeHead(source.status, {'Content-Type': contentType});
+        if (source.body) await pipeline(source.body, res);
+        else res.end();
     } catch (error) {
         if (res.destroyed) return;
         console.error(error);
