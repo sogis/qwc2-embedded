@@ -11,7 +11,7 @@ Anonymer SO!GIS-Kartenviewer für iframes. Der Einstieg bleibt `/api/embed/v2/in
 
 Beide Registries erhalten ein Multiarch-Image für `linux/amd64` und `linux/arm64`. `3`, `3.1` und `latest` folgen der neuesten erfolgreichen Veröffentlichung. Der Tag mit der GitHub-Actions-Run-Nummer bezeichnet den konkreten Build.
 
-Der Container lauscht standardmässig auf Port `8080`. `GET /actuator/health`, `GET /actuator/health/livenessState` und `GET /actuator/health/readinessState` antworten mit `{"status":"UP"}`, sobald der lokale Webserver erreichbar ist. `GET /ping` liefert `pong`. Die Probes fragen keine externen Dienste ab.
+Der Container lauscht standardmässig auf Port `8080`. `GET /actuator/health`, `GET /actuator/health/livenessState` und `GET /actuator/health/readinessState` antworten mit `{"status":"UP"}`, sobald der lokale Webserver erreichbar ist. `GET /ping` liefert `pong`. OpenShift und Kubernetes prüfen die Endpunkte direkt am Pod auf Port `8080`. Die Probes fragen keine externen Dienste ab.
 
 Der [Docker-Workflow](.github/workflows/docker.yml) baut und testet bei Pull Requests ohne Registry-Zugangsdaten. Er veröffentlicht nach erfolgreichen Tests bei einem Push auf `main` oder einem manuellen Start auf `main`. Die Workflow-Zusammenfassung enthält Digest und Tags.
 
@@ -29,7 +29,7 @@ Alternativ lassen sich Build und Start direkt mit Docker ausführen.
 
 ```sh
 docker build -t wgc-embedded:local .
-docker run --rm -p 8080:8080 wgc-embedded:local
+docker run --rm -p 127.0.0.1:8080:8080 wgc-embedded:local
 ```
 
 Sobald der Container lauscht, ist die Karte unter `http://localhost:8080/api/embed/v2/index.html` erreichbar. Mit `EMBED_PORT=8081` lässt sich der lokale Port wechseln. Der Container benötigt ausgehenden HTTPS-Zugriff auf `geo.so.ch`.

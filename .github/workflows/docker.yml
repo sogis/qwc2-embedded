@@ -36,6 +36,8 @@ jobs:
           http://127.0.0.1:8080/actuator/health/readinessState
       - run: npx playwright install --with-deps --only-shell chromium
       - name: Probe, browser and integration tests
+        env:
+          EMBED_ORIGIN: http://127.0.0.1:8080
         run: npm test
       - name: Container logs
         if: failure()
