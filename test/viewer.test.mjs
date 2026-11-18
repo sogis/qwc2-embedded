@@ -223,8 +223,14 @@ test('Fremd-Origin und kleines iframe zeigen mehrere Objektinformationen und lad
     await frame.getByText('Grundstücke', {exact: true}).waitFor();
     await frame.getByText('2 Objekt(e)', {exact: true}).waitFor();
     const dialog = await frame.locator('.resizeable-window').boundingBox();
-    const fullMap = await frame.getByRole('link', {name: 'In geo.so.ch/map ansehen'}).boundingBox();
-    assert.ok(dialog.y + dialog.height <= fullMap.y);
+    const linkToFullMap = frame.getByRole('link', {name: 'In geo.so.ch/map ansehen'});
+    const fullMap = await linkToFullMap.boundingBox();
+    const viewport = await frame.locator('.ol-viewport').boundingBox();
+    assert.ok(fullMap.x - viewport.x < 16 && fullMap.y - viewport.y < 16);
+    assert.equal(await linkToFullMap.evaluate(link => getComputedStyle(link).fontWeight), '700');
+    assert.equal(await linkToFullMap.locator('img').evaluate(img => img.naturalWidth), 32);
+    assert.ok(fullMap.y + fullMap.height <= dialog.y);
+    assert.ok(dialog.y + dialog.height <= viewport.y + viewport.height);
     assert.ok(dialog.width <= 265);
     assert.match(await frame.getByRole('link', {name: 'https://dox42.so.ch'}).getAttribute('href'), /^https:\/\/dox42\.so\.ch\//);
     const link = frame.getByRole('link', {name: 'Link', exact: true});

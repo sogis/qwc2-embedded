@@ -13,8 +13,9 @@ html, body, #container {
 }
 
 #loading {
-    top: 0;
-    left: 0;
+    top: 40px;
+    left: 8px;
+    margin: 0;
 }
 
 body:has(.ol-viewport) #loading:not([data-error]) {
@@ -22,11 +23,16 @@ body:has(.ol-viewport) #loading:not([data-error]) {
 }
 
 #full-map {
-    bottom: 0;
-    right: 0;
+    top: 8px;
+    left: 8px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-weight: 700;
+    border-radius: 4px;
 }
 
 /* Keep the full-map link clear of the Identify window in low embeds. */
 #container .resizeable-window {
-    max-height: calc(100% - 24px) !important;
+    max-height: calc(100% - 40px) !important;
 }

@@ -39,7 +39,7 @@ function configForEmbed(config) {
         cfg: {
             ...identify.cfg,
             clearResultsOnClose: true,
-            geometry: {initialHeight: 220, initialWidth: 320, initialX: 0, initialY: 0}
+            geometry: {initialHeight: 220, initialWidth: 320, initialX: 0, initialY: 40}
         }
     }];
     for (const key of Object.keys(config)) {
