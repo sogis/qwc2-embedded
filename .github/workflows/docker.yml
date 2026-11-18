@@ -39,6 +39,8 @@ jobs:
         env:
           EMBED_ORIGIN: http://127.0.0.1:8080
         run: npm test
+      - name: Check arm64 image build without emulation
+        run: docker build --platform linux/arm64 .
       - name: Container logs
         if: failure()
         run: docker compose logs --no-color
