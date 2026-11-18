@@ -2,10 +2,34 @@
 
 Anonymer SO!GIS-Kartenviewer für iframes. Der Einstieg bleibt `/api/embed/v2/index.html`.
 
+## Docker-Image 3.1
+
+| Registry | Image | Tags |
+| --- | --- | --- |
+| Docker Hub | `sogis/wgc-embedded` | `3`, `3.1`, `3.1.<github.run_number>`, `latest` |
+| GitHub Container Registry | `ghcr.io/sogis/wgc-embedded` | `3`, `3.1`, `3.1.<github.run_number>`, `latest` |
+
+Beide Registries erhalten ein Multiarch-Image für `linux/amd64` und `linux/arm64`. `3`, `3.1` und `latest` folgen der neuesten erfolgreichen Veröffentlichung. Der Tag mit der GitHub-Actions-Run-Nummer bezeichnet den konkreten Build.
+
+Der Container lauscht standardmässig auf Port `8080`. `GET /actuator/health`, `GET /actuator/health/livenessState` und `GET /actuator/health/readinessState` antworten mit `{"status":"UP"}`, sobald der lokale Webserver erreichbar ist. `GET /ping` liefert `pong`. Die Probes fragen keine externen Dienste ab.
+
+Der [Docker-Workflow](.github/workflows/docker.yml) baut und testet bei Pull Requests ohne Registry-Zugangsdaten. Er veröffentlicht nach erfolgreichen Tests bei einem Push auf `main` oder einem manuellen Start auf `main`. Die Workflow-Zusammenfassung enthält Digest und Tags.
+
+- Docker Hub benötigt im Repository `sogis/qwc2-embedded` die Actions-Secrets `DOCKER_USERNAME` und `DOCKER_PASSWORD` mit Schreibzugriff auf `sogis/wgc-embedded`.
+- GHCR verwendet `GITHUB_TOKEN` mit `packages: write`. Beim bestehenden [GHCR-Paket](https://github.com/orgs/sogis/packages/container/package/wgc-embedded) muss `sogis/qwc2-embedded` unter **Package settings → Manage Actions access** Schreibzugriff erhalten, falls dieser noch fehlt.
+- Vor der ersten produktiven Veröffentlichung den [Publish-Workflow des alten Repositories](https://github.com/sogis/wgc-embedded/actions/workflows/main.yml) deaktivieren und laufende Veröffentlichungen auslaufen lassen. Er setzt bei Läufen auf `main` ebenfalls `latest` auf beiden Registries und kann damit wieder auf Version 2 zeigen. Vorhandene 2.x-Tags bleiben verfügbar.
+
 ## Lokal starten
 
 ```sh
 docker compose up -d --build
+```
+
+Alternativ lassen sich Build und Start direkt mit Docker ausführen.
+
+```sh
+docker build -t wgc-embedded:local .
+docker run --rm -p 8080:8080 wgc-embedded:local
 ```
 
 Sobald der Container lauscht, ist die Karte unter `http://localhost:8080/api/embed/v2/index.html` erreichbar. Mit `EMBED_PORT=8081` lässt sich der lokale Port wechseln. Der Container benötigt ausgehenden HTTPS-Zugriff auf `geo.so.ch`.

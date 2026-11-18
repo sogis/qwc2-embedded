@@ -12,6 +12,12 @@ const backgrounds = new Set(['hintergrundkarte_sw', 'hintergrundkarte_farbig', '
 const tiles = new RegExp(String.raw`^api/wmts/1\.0\.0/ch\.so\.agi\.(?:${[...backgrounds].join('|')})/default/2056/\d+/\d+/\d+\.png$`);
 const mapQuery = new Set('service request version layers styles format transparent width height bbox crs srs dpi format_options map_resolution opacities tiled __t'.split(' '));
 const identifyQuery = new Set([...mapQuery, ...'query_layers info_format i j x y feature_count radius fi_line_tolerance fi_point_tolerance fi_polygon_tolerance with_geometry with_maptip with_htmlcontent with_displayname id filter'.split(' ')]);
+// Preserve the legacy Spring Boot probe URLs.
+const healthPaths = new Set([
+    '/actuator/health',
+    '/actuator/health/livenessState',
+    '/actuator/health/readinessState'
+]);
 const viewerPolicy = [
     "default-src 'none'",
     "script-src 'self'",
@@ -111,6 +117,12 @@ async function upstream(path) {
 export default createServer(async (req, res) => {
     try {
         const url = new URL(req.url, 'http://localhost');
+        if (req.method === 'GET' && url.pathname === '/ping') {
+            return res.writeHead(200, {'Content-Type': 'text/plain; charset=utf-8'}).end('pong');
+        }
+        if (req.method === 'GET' && healthPaths.has(url.pathname)) {
+            return res.writeHead(200, {'Content-Type': 'application/json'}).end('{"status":"UP"}');
+        }
         if (!url.pathname.startsWith(prefix)) return res.writeHead(404).end();
         if (req.method !== 'GET') return res.writeHead(405, {Allow: 'GET'}).end();
         const route = url.pathname.slice(prefix.length);
