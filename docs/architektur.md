@@ -37,6 +37,7 @@ Alle Reviews laufen unabhängig mit OpenCode 2.0.28 und `deepseek/deepseek-flash
 | E2 | `2bd787827f5290465207d325f29ac699fde883f6` | **PASS.** Der unabhängige Browserdurchlauf mass für `s=4347` 1,1501 m/Pixel, auch nach Reload, und bestätigte den Vollkartenlink. |
 | E3 | `5d74f3f2686c8636eb64d284732a2ae2bb3f217d` | **PASS.** Im 265 × 174 px grossen iframe bestätigte der Review zwei native HTML-Ergebnisse, gültige PDF-Daten und elf Negativfälle der Dokumentroute. |
 | E4 | `9df69335b1079d6f4b1dfa20b5b0d4a6553cce45` | **PASS.** Separater Compose-Betrieb, 7/7 Tests, gültige CSP und anonymer Identify-Aufruf aus einem fremden Origin. |
+| E5 | `7b2d88c94b481e291aea0a9a1e9beb054384b6da` | **PASS.** Unabhängiger Gesamt- und Vereinfachungsreview gegen `main`, 8/8 Tests mit separatem Compose-Projekt und zusätzliche Live-WMS-Gegenprobe. |
 
 Der Zoombereich folgt den Live-WMTS-Auflösungen, die mit dem alten Kartenviewer übereinstimmen. Ein erforderlicher Zwischenmassstab wird als zusätzlicher Startwert eingefügt. QWC2 interpoliert Bruchzooms linear, OpenLayers logarithmisch. Deshalb korrigiert der Bootstrap den Wert `s` in der bestehenden QWC2-URL-Warteschlange anhand der tatsächlich angezeigten Auflösung. Der Vollkartenlink liest diese Auflösung und den Kartenmittelpunkt direkt bei Aktivierung, auch vor der verzögerten URL-Aktualisierung.
 
@@ -53,3 +54,5 @@ Die automatisierte Suite prüft einen iframe auf einem separaten lokalen HTTP-Or
 Der Bootstrap registriert die zwei QWC2-Plugins und ergänzt ihre bestehenden Hooks für Live-Layer, WMS-Endpunkte und den Startmassstab. Die URL-Warteschlange, Kartendarstellung, Ergebnisliste und Downloads laufen über QWC2 beziehungsweise den Browser. Der Vollkartenlink bleibt ein HTML-Link. Der Proxy verwendet ausschliesslich Node.js-Bordmittel. Die direkte `lodash.isempty`-Abhängigkeit entfiel, da QWC2 sie selbst deklariert.
 
 Der gebaute Stand umfasst 2'565'447 Byte JavaScript (771'096 Byte mit gzip). Ein Browser-Test zeigt, dass ein einzelner Query-Parameter eines externen WMS in ursprünglicher Schreibweise ankommt. Eine gesonderte Probe mit dem SO!GIS-Identify-XML und simuliertem `inline="0"` bestätigte natives HTML in einem QWC2-Ergebnisiframe unter der CSP. `frame-src about:` ermöglicht diesen Anzeigepfad.
+
+Eine abschliessende manuelle Chromium-Probe öffnete den produktiven Vollkartenlink mit Orthofoto, Grundstückslayer, Mittelpunkt `2607739,1228426` und `s=2000`. Das Ziel lud WMTS und Grundstücks-WMS mit HTTP 200 und dem übertragenen Mittelpunkt. Die Vollkarte verwendet ihre eigenen Zoomstufen.

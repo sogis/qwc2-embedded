@@ -23,7 +23,7 @@ Sobald der Container lauscht, ist die Karte unter `http://localhost:8080/api/emb
 | Parameter | Funktion |
 | --- | --- |
 | `bl` | Hintergrundkarte `ch.so.agi.hintergrundkarte_sw`, `ch.so.agi.hintergrundkarte_farbig` oder `ch.so.agi.hintergrundkarte_ortho`. QWC2 akzeptiert auch die Kennungen ohne `ch.so.agi.`. Standard ist die graue Karte. |
-| `l` | WMS-Layer von unten nach oben, durch Kommas getrennt. `layer[50]` bedeutet 50 % Transparenz. `layer!` bleibt in der URL und ist unsichtbar. Externe Layer verwenden `wms:URL#Layer`, etwa `wms%3Ahttps%3A%2F%2Fwfs.geodienste.ch%2Fav_0%2Fdeu%23Hoheitsgrenzen%5B35%5D`. `&` ist in externen Endpunkten auch kodiert ausgeschlossen. |
+| `l` | WMS-Layer von unten nach oben, durch Kommas getrennt. `layer[50]` bedeutet 50 % Transparenz. `layer!` bleibt in der URL und ist unsichtbar. Externe Layer verwenden `wms:URL#Layer`, etwa `wms%3Ahttps%3A%2F%2Fwfs.geodienste.ch%2Fav_0%2Fdeu%23Hoheitsgrenzen%5B35%5D`. Ein einzelner Query-Parameter im externen Endpunkt ist möglich. `&` ist dort auch kodiert ausgeschlossen. |
 | `c` | Mittelpunkt in EPSG:2056, standardmässig `2616500,1237000`. |
 | `s` | Massstabsnenner, standardmässig `378000`. Ein gesetztes `c` oder `s` wirkt unabhängig vom jeweils anderen Wert. |
 
