@@ -38,6 +38,7 @@ Alle Reviews laufen unabhängig mit OpenCode 2.0.28 und `deepseek/deepseek-flash
 | E3 | `5d74f3f2686c8636eb64d284732a2ae2bb3f217d` | **PASS.** Im 265 × 174 px grossen iframe bestätigte der Review zwei native HTML-Ergebnisse, gültige PDF-Daten und elf Negativfälle der Dokumentroute. |
 | E4 | `9df69335b1079d6f4b1dfa20b5b0d4a6553cce45` | **PASS.** Separater Compose-Betrieb, 7/7 Tests, gültige CSP und anonymer Identify-Aufruf aus einem fremden Origin. |
 | E5 | `7b2d88c94b481e291aea0a9a1e9beb054384b6da` | **PASS.** Unabhängiger Gesamt- und Vereinfachungsreview gegen `main`, 8/8 Tests mit separatem Compose-Projekt und zusätzliche Live-WMS-Gegenprobe. |
+| Vollkartenlink | `c0c5975812541d8f1db90d8ea9ade1301bb446cc` | **PASS.** Unabhängiger Nachreview mit Chromium bei 180 und 265 px Breite. Lokal 8/8 Compose-Tests, einschliesslich Identify und Vollkartenlink. |
 
 Der Zoombereich folgt den Live-WMTS-Auflösungen, die mit dem alten Kartenviewer übereinstimmen. Ein erforderlicher Zwischenmassstab wird als zusätzlicher Startwert eingefügt. QWC2 interpoliert Bruchzooms linear, OpenLayers logarithmisch. Deshalb korrigiert der Bootstrap den Wert `s` in der bestehenden QWC2-URL-Warteschlange anhand der tatsächlich angezeigten Auflösung. Der Vollkartenlink liest diese Auflösung und den Kartenmittelpunkt direkt bei Aktivierung, auch vor der verzögerten URL-Aktualisierung.
 
