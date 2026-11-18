@@ -7,6 +7,25 @@ import {chromium} from 'playwright';
 
 const embed = new URL('/api/embed/v2/index.html', process.env.EMBED_ORIGIN ?? 'http://localhost:8080');
 
+test('Der Container bedient die bisherigen Health-Probes und die Embed-URL', async () => {
+    for (const path of ['/actuator/health', '/actuator/health/livenessState', '/actuator/health/readinessState']) {
+        const response = await fetch(new URL(path, embed), {redirect: 'manual', signal: AbortSignal.timeout(5000)});
+        assert.equal(response.status, 200, path);
+        assert.match(response.headers.get('content-type'), /^application\/json\b/);
+        assert.deepEqual(await response.json(), {status: 'UP'}, path);
+    }
+
+    const ping = await fetch(new URL('/ping', embed), {redirect: 'manual', signal: AbortSignal.timeout(5000)});
+    assert.equal(ping.status, 200);
+    assert.match(ping.headers.get('content-type'), /^text\/plain\b/);
+    assert.equal(await ping.text(), 'pong');
+
+    const index = await fetch(embed, {redirect: 'manual', signal: AbortSignal.timeout(5000)});
+    assert.equal(index.status, 200);
+    assert.match(index.headers.get('content-type'), /^text\/html\b/);
+    assert.match(await index.text(), /<title>SO!GIS Karte<\/title>/);
+});
+
 test('Die Embed-Seite zeichnet Live-WMTS und dynamische SO!GIS-Ebenen', async t => {
     const browser = await chromium.launch();
     t.after(() => browser.close());
