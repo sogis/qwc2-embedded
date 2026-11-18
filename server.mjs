@@ -14,6 +14,18 @@ const backgrounds = new Set(['hintergrundkarte_sw', 'hintergrundkarte_farbig', '
 const tiles = new RegExp(String.raw`^api/wmts/1\.0\.0/ch\.so\.agi\.(?:${[...backgrounds].join('|')})/default/2056/\d+/\d+/\d+\.png$`);
 const mapQuery = new Set('service request version layers styles format transparent width height bbox crs srs dpi format_options map_resolution opacities tiled __t'.split(' '));
 const identifyQuery = new Set([...mapQuery, ...'query_layers info_format i j x y feature_count radius fi_line_tolerance fi_point_tolerance fi_polygon_tolerance with_geometry with_maptip with_htmlcontent with_displayname id filter'.split(' ')]);
+const viewerPolicy = [
+    "default-src 'none'",
+    "script-src 'self'",
+    "style-src 'self' 'unsafe-inline'",
+    "font-src 'self' data:",
+    "img-src 'self' data: blob: http: https:",
+    "connect-src 'self'",
+    "frame-src about:",
+    'frame-ancestors *',
+    "base-uri 'none'",
+    "form-action 'none'"
+].join('; ');
 const staticFiles = {
     'index.html': ['index.html', 'text/html; charset=utf-8'],
     'viewer.js': ['dist/viewer.js', 'text/javascript'],
@@ -112,6 +124,10 @@ createServer(async (req, res) => {
         const route = url.pathname.slice(prefix.length);
         res.setHeader('X-Content-Type-Options', 'nosniff');
         if (Object.hasOwn(staticFiles, route)) {
+            if (route === 'index.html') {
+                res.setHeader('Content-Security-Policy', viewerPolicy);
+                res.setHeader('Referrer-Policy', 'no-referrer');
+            }
             const [file, contentType] = staticFiles[route];
             res.setHeader('Content-Type', contentType);
             return await pipeline(createReadStream(new URL(file, import.meta.url)), res);
@@ -130,16 +146,20 @@ createServer(async (req, res) => {
         const query = serviceQuery(route, url.searchParams);
         if (query === null) return res.writeHead(400).end();
         const source = await upstream(route + query);
-        const contentType = source.headers.get('content-type') || 'application/octet-stream';
+        const contentType = source.headers.get('content-type')?.split(';')[0].trim();
+        const expectedTypes = report ? ['application/pdf'] :
+            route === identifyPath ? ['text/xml', 'application/xml'] :
+            route === dataproductPath + 'weblayers' ? ['application/json'] : ['image/png', 'image/jpeg'];
+        if (!source.ok || !expectedTypes.includes(contentType)) {
+            await source.body?.cancel();
+            return res.writeHead(source.ok ? 502 : source.status, {'Content-Type': 'text/plain; charset=utf-8'})
+                .end('Der öffentliche SO!GIS-Dienst konnte die Anfrage nicht beantworten.');
+        }
         if (report) {
-            if (!source.ok || contentType.split(';')[0] !== 'application/pdf') {
-                await source.body?.cancel();
-                return res.writeHead(source.ok ? 502 : source.status).end('Das Objektblatt konnte nicht geladen werden.');
-            }
             res.setHeader('Content-Disposition', `attachment; filename="${route.split('/').at(-1)}"`);
             res.setHeader('Cache-Control', 'no-store');
         }
-        res.writeHead(source.status, {'Content-Type': contentType});
+        res.writeHead(source.status, {'Content-Type': source.headers.get('content-type')});
         if (source.body) await pipeline(source.body, res);
         else res.end();
     } catch (error) {

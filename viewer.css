@@ -17,7 +17,7 @@ html, body, #container {
     left: 0;
 }
 
-body:has(.ol-viewport) #loading {
+body:has(.ol-viewport) #loading:not([data-error]) {
     display: none;
 }
 

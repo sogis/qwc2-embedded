@@ -51,7 +51,9 @@ fullMap.addEventListener('click', updateFullMap);
 
 axios.interceptors.response.use(undefined, error => {
     if (['config.json', 'themes.json'].includes(error.config?.url)) {
-        document.getElementById('loading').textContent = 'Die Kartenkonfiguration von SO!GIS konnte nicht geladen werden.';
+        const status = document.getElementById('loading');
+        status.setAttribute('data-error', '');
+        status.textContent = 'Die Kartenkonfiguration von SO!GIS konnte nicht geladen werden.';
     }
     return Promise.reject(error);
 });

@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
+import {createServer} from 'node:http';
+import {once} from 'node:events';
 import {test} from 'node:test';
 import {chromium} from 'playwright';
 
@@ -34,6 +36,13 @@ test('Die Embed-Seite zeichnet Live-WMTS und dynamische SO!GIS-Ebenen', async t 
         return canvas?.getContext('2d').getImageData(300, 195, 1, 1).data[3] === 255;
     });
     assert.equal(new URL(page.url()).pathname, embed.pathname);
+    await page.waitForLoadState('networkidle');
+    const canvas = page.locator('.ol-layer canvas');
+    const withParcel = await canvas.screenshot();
+    url.searchParams.delete('l');
+    await page.goto(url.href);
+    await page.waitForLoadState('networkidle');
+    assert.notDeepEqual(await canvas.screenshot(), withParcel, 'Das Grundstückslayer verändert das sichtbare Kartenbild');
     assert.deepEqual(errors, []);
     assert.deepEqual(unexpected, []);
 });
@@ -135,6 +144,8 @@ test('README-Layerliste, externer WMS und Vollkartenlink nach Verschieben und Zo
     const image = await externalMap;
     assert.match(image.headers()['content-type'], /^image\//);
     assert.equal(new URL(image.url()).searchParams.get('LAYERS'), 'Hoheitsgrenzen');
+    assert.equal(image.request().resourceType(), 'image');
+    assert.equal((await image.request().allHeaders())['sec-fetch-mode'], 'no-cors');
     await page.waitForFunction(layers => new URL(location.href).searchParams.get('l') === layers, layerList);
 
     await page.mouse.move(270, 160);
@@ -170,7 +181,7 @@ test('README-Layerliste, externer WMS und Vollkartenlink nach Verschieben und Zo
     checkExtent(await reloaded, actual.get('c').split(',').map(Number), Number(actual.get('s')));
 });
 
-test('Kleine iframe-Karte zeigt mehrere Objektinformationen und lädt das Objektblatt', async t => {
+test('Fremd-Origin und kleines iframe zeigen mehrere Objektinformationen und laden das Objektblatt', async t => {
     const browser = await chromium.launch();
     t.after(() => browser.close());
     const page = await browser.newPage({
@@ -180,8 +191,24 @@ test('Kleine iframe-Karte zeigt mehrere Objektinformationen und lädt das Objekt
         userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Version/17.0 Mobile/15E148 Safari/604.1'
     });
     const url = entry({l: `${parcel},${groundwater}[50],${hidden}!`, c: '2607739,1228426', s: '2000'});
+    const host = createServer((request, response) => {
+        response.writeHead(200, {'Content-Type': 'text/html; charset=utf-8'}).end(`
+            <!doctype html><meta name="viewport" content="width=device-width, initial-scale=1">
+            <iframe title="Karte" width="265" height="174" src="${url.replaceAll('&', '&amp;')}"></iframe>`);
+    });
+    host.listen(0, '127.0.0.1');
+    await once(host, 'listening');
+    t.after(() => host.close());
     const map = mapResponse(page);
-    await page.setContent(`<meta name="viewport" content="width=device-width, initial-scale=1"><iframe title="Karte" width="265" height="174" src="${url.replaceAll('&', '&amp;')}"></iframe>`);
+    const frameResponse = page.waitForResponse(response => response.url() === url);
+    const parent = `http://127.0.0.1:${host.address().port}`;
+    assert.notEqual(parent, embed.origin);
+    await page.goto(parent);
+    const headers = (await frameResponse).headers();
+    assert.match(headers['content-security-policy'], /frame-ancestors \*/);
+    assert.equal(headers['x-frame-options'], undefined);
+    assert.equal(headers['set-cookie'], undefined);
+    assert.equal(headers.location, undefined);
     await map;
     const frame = page.frameLocator('iframe');
     const identify = page.waitForResponse(response => response.ok() && response.url().includes('/featureinfo/somap?'));
@@ -213,3 +240,16 @@ test('Kleine iframe-Karte zeigt mehrere Objektinformationen und lädt das Objekt
     await frame.getByTitle('Schliessen', {exact: true}).tap();
     await frame.getByText('Objektinformationen', {exact: true}).waitFor({state: 'hidden'});
 });
+
+for (const name of ['config.json', 'themes.json']) {
+    test(`Fehler beim Laden von ${name} ist im Viewer sichtbar`, async t => {
+        const browser = await chromium.launch();
+        t.after(() => browser.close());
+        const page = await browser.newPage();
+        await page.route(`**/${name}*`, route => route.fulfill({status: 502, body: 'SO!GIS ist vorübergehend nicht verfügbar.'}));
+        await page.goto(entry({}));
+        const status = page.getByRole('status').filter({hasText: 'Die Kartenkonfiguration von SO!GIS konnte nicht geladen werden.'});
+        await status.waitFor();
+        assert.equal(await page.locator('.ol-layer canvas').count(), 0);
+    });
+}
