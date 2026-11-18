@@ -9,7 +9,7 @@ const documentPath = 'api/v1/document/';
 const mapPath = 'ows/somap';
 const identifyPath = 'api/v1/featureinfo/somap';
 const backgrounds = new Set(['hintergrundkarte_sw', 'hintergrundkarte_farbig', 'hintergrundkarte_ortho']);
-const tiles = /^api\/wmts\/1\.0\.0\/ch\.so\.agi\.hintergrundkarte_(?:sw|farbig|ortho)\/default\/2056\/\d+\/\d+\/\d+\.png$/;
+const tiles = new RegExp(String.raw`^api/wmts/1\.0\.0/ch\.so\.agi\.(?:${[...backgrounds].join('|')})/default/2056/\d+/\d+/\d+\.png$`);
 const mapQuery = new Set('service request version layers styles format transparent width height bbox crs srs dpi format_options map_resolution opacities tiled __t'.split(' '));
 const identifyQuery = new Set([...mapQuery, ...'query_layers info_format i j x y feature_count radius fi_line_tolerance fi_point_tolerance fi_polygon_tolerance with_geometry with_maptip with_htmlcontent with_displayname id filter'.split(' ')]);
 const staticFiles = {
@@ -63,7 +63,10 @@ function themesForEmbed({themes}) {
         }
         layer.url = prefix + expectedPath;
     }
-    if (themes.backgroundLayers.length !== backgrounds.size) throw new Error('Missing SO!GIS background layers');
+    const overview = themes.backgroundLayers.find(layer => layer.name === 'hintergrundkarte_sw');
+    if (!overview || themes.backgroundLayers.length !== backgrounds.size) throw new Error('Missing SO!GIS background layers');
+    // QWC2 uses a 96 dpi screen. The WMTS grid covers the former viewer's zoom range.
+    theme.scales = overview.resolutions.map(resolution => resolution * 96 / 0.0254);
     return {themes};
 }
 

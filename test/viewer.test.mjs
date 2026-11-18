@@ -54,3 +54,115 @@ test('Der Embed-Prefix gewährt nur Zugriff auf freigegebene Lese-Endpunkte', as
         assert.equal(response.status, status, path);
     }
 });
+
+const parcel = 'ch.so.agi.av.grundstuecke';
+const groundwater = 'ch.so.afu.ewsabfrage.abfrage';
+const hidden = 'ch.so.afu.gewaesserschutz.schutzareale';
+const zones = 'ch.so.afu.gewaesserschutz.schutzzonen';
+const contaminated = 'ch.so.afu.altlasten.standorte';
+const external = 'wms:https://wfs.geodienste.ch/av_0/deu#Hoheitsgrenzen';
+
+function entry(params) {
+    const url = new URL(embed);
+    url.search = new URLSearchParams(params);
+    return url.href;
+}
+
+function mapResponse(page) {
+    return page.waitForResponse(response => response.ok() && response.url().includes('/ows/somap?'));
+}
+
+function checkExtent(response, center, scale) {
+    const params = new URL(response.url()).searchParams;
+    const [left, bottom, right, top] = params.get('BBOX').split(',').map(Number);
+    assert.ok(Math.abs((left + right) / 2 - center[0]) < 1);
+    assert.ok(Math.abs((bottom + top) / 2 - center[1]) < 1);
+    const resolution = (right - left) / Number(params.get('WIDTH'));
+    assert.ok(Math.abs(resolution / (scale / 3780) - 1) < 0.025, `Massstab ${scale}, Auflösung ${resolution}`);
+    return params;
+}
+
+test('Vorgabewerte, unabhängige c/s, Hintergrundkarten und Ausschnitt', async t => {
+    const browser = await chromium.launch();
+    t.after(() => browser.close());
+    const page = await browser.newPage({viewport: {width: 600, height: 390}});
+    await page.goto(entry({}));
+    await page.waitForFunction(() => {
+        const url = new URL(location.href);
+        return url.searchParams.get('bl') === 'hintergrundkarte_sw' && url.searchParams.get('s') === '378000';
+    });
+    const cases = [
+        [{}, [2616500, 1237000], 378000, 'sw'],
+        [{c: '2600779,1215505'}, [2600779, 1215505], 378000, 'farbig'],
+        [{s: '22694'}, [2616500, 1237000], 22694, 'ortho'],
+        [{c: '2600779,1215505', s: '22694'}, [2600779, 1215505], 22694, 'ortho'],
+        [{s: '4000000'}, [2616500, 1237000], 4000000, 'sw']
+    ];
+    for (const [params, center, scale, background] of cases) {
+        const layer = 'ch.so.agi.hintergrundkarte_' + background;
+        const map = mapResponse(page);
+        const backgroundTile = page.waitForResponse(response => response.ok() && response.url().includes(`/${layer}/`));
+        await page.goto(entry({...params, bl: layer, l: groundwater}));
+        checkExtent(await map, center, scale);
+        await backgroundTile;
+        await page.waitForFunction(({center, scale, background}) => {
+            const query = new URL(location.href).searchParams;
+            return query.get('c') === center.join(',') && query.get('s') === String(scale) &&
+                query.get('bl') === 'hintergrundkarte_' + background;
+        }, {center, scale, background});
+    }
+});
+
+test('README-Layerliste, externer WMS und Vollkartenlink nach Verschieben und Zoomen', async t => {
+    const browser = await chromium.launch();
+    t.after(() => browser.close());
+    const context = await browser.newContext({viewport: {width: 600, height: 390}});
+    const page = await context.newPage();
+    const externals = [];
+    page.on('request', request => {
+        if (new URL(request.url()).host === 'wfs.geodienste.ch') externals.push(request.url());
+    });
+    const layerList = [parcel, `${groundwater}[50]`, `${hidden}!`, zones, contaminated, `${external}[35]`].join(',');
+    const map = mapResponse(page);
+    const externalMap = page.waitForResponse(response => response.ok() && response.url().startsWith('https://wfs.geodienste.ch/'));
+    await page.goto(entry({bl: 'ch.so.agi.hintergrundkarte_ortho', l: layerList, c: '2600779,1215505', s: '22694'}));
+    const mapParams = checkExtent(await map, [2600779, 1215505], 22694);
+    assert.equal(mapParams.get('LAYERS'), [parcel, groundwater, zones, contaminated].join(','));
+    assert.equal(mapParams.get('OPACITIES'), '255,128,255,255');
+    const image = await externalMap;
+    assert.match(image.headers()['content-type'], /^image\//);
+    assert.equal(new URL(image.url()).searchParams.get('LAYERS'), 'Hoheitsgrenzen');
+    await page.waitForFunction(layers => new URL(location.href).searchParams.get('l') === layers, layerList);
+
+    await page.mouse.move(270, 160);
+    await page.mouse.down();
+    await page.mouse.move(340, 206, {steps: 5});
+    await page.mouse.up();
+    await page.mouse.wheel(0, -140);
+    await page.waitForFunction(() => {
+        const query = new URL(location.href).searchParams;
+        return query.has('s') && query.get('s') !== '22694' && query.get('c') !== '2600779,1215505';
+    });
+
+    let fullMap;
+    await context.route('https://geo.so.ch/map/**', async route => {
+        fullMap = new URL(route.request().url());
+        await route.fulfill({status: 200, body: 'In geo.so.ch/map ansehen'});
+    });
+    const popup = page.waitForEvent('popup');
+    await page.getByRole('link', {name: 'In geo.so.ch/map ansehen'}).click();
+    await (await popup).waitForLoadState();
+    const actual = new URL(page.url()).searchParams;
+    assert.equal(fullMap.pathname, '/map/');
+    for (const key of ['bl', 'l', 'c', 's']) assert.equal(fullMap.searchParams.get(key), actual.get(key), key);
+    assert.equal(actual.get('l'), layerList);
+    assert.equal(actual.get('bl'), 'hintergrundkarte_ortho');
+    const identify = page.waitForResponse(response => response.ok() && response.url().includes('/featureinfo/somap?'));
+    await page.mouse.click(280, 185);
+    await identify;
+    assert.ok(externals.length);
+    assert.ok(externals.every(url => new URL(url).searchParams.get('REQUEST') === 'GetMap'));
+    const reloaded = mapResponse(page);
+    await page.reload();
+    checkExtent(await reloaded, actual.get('c').split(',').map(Number), Number(actual.get('s')));
+});
