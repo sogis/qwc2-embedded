@@ -39,6 +39,7 @@ function configForEmbed(config) {
         cfg: {
             ...identify.cfg,
             clearResultsOnClose: true,
+            // Match --full-map-clearance in viewer.css.
             geometry: {initialHeight: 220, initialWidth: 320, initialX: 0, initialY: 40}
         }
     }];

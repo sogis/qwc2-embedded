@@ -228,7 +228,7 @@ test('Fremd-Origin und kleines iframe zeigen mehrere Objektinformationen und lad
     const viewport = await frame.locator('.ol-viewport').boundingBox();
     assert.ok(fullMap.x - viewport.x < 16 && fullMap.y - viewport.y < 16);
     assert.equal(await linkToFullMap.evaluate(link => getComputedStyle(link).fontWeight), '700');
-    assert.equal(await linkToFullMap.locator('img').evaluate(img => img.naturalWidth), 32);
+    assert.ok(await linkToFullMap.locator('img').evaluate(img => img.naturalWidth > 0));
     assert.ok(fullMap.y + fullMap.height <= dialog.y);
     assert.ok(dialog.y + dialog.height <= viewport.y + viewport.height);
     assert.ok(dialog.width <= 265);

@@ -1,3 +1,7 @@
+:root {
+    --full-map-clearance: 40px;
+}
+
 html, body, #container {
     width: 100%;
     height: 100%;
@@ -13,7 +17,7 @@ html, body, #container {
 }
 
 #loading {
-    top: 40px;
+    top: var(--full-map-clearance);
     left: 8px;
     margin: 0;
 }
@@ -28,11 +32,23 @@ body:has(.ol-viewport) #loading:not([data-error]) {
     display: inline-flex;
     align-items: center;
     gap: 8px;
+    box-sizing: border-box;
+    max-width: calc(100% - 16px);
     font-weight: 700;
     border-radius: 4px;
 }
 
+#full-map img {
+    flex: none;
+}
+
+#full-map span {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 /* Keep the full-map link clear of the Identify window in low embeds. */
 #container .resizeable-window {
-    max-height: calc(100% - 40px) !important;
+    max-height: calc(100% - var(--full-map-clearance)) !important;
 }
