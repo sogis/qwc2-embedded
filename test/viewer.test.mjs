@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {readFile} from 'node:fs/promises';
-import {createServer} from 'node:http';
+import {createServer, get} from 'node:http';
 import {once} from 'node:events';
 import {test} from 'node:test';
 import {chromium} from 'playwright';
@@ -58,13 +58,86 @@ test('Der Embed-Prefix gewährt nur Zugriff auf freigegebene Lese-Endpunkte', as
         ['ows/somap?REQUEST=GetMap&request=GetMap', 400],
         ['api/v1/featureinfo/somap?request=GetFeatureInfo&filter=other', 400],
         ['api/v1/document/%2e%2e%2fother.pdf', 404],
-        ['api/v1/document/grundstuecksbeschrieb.pdf?feature=1&crs=EPSG%3A2056&x=1&y=1&url=other', 400],
+        ['api/v1/documentation/foo.xlsx', 404],
+        ['api/v1/document/foo.xlsx', 405, 'POST'],
         ['config.json', 405, 'POST']
     ];
     for (const [path, status, method] of cases) {
         const response = await fetch(new URL('/api/embed/v2/' + path, embed), {method, redirect: 'manual'});
         assert.equal(response.status, status, path);
     }
+});
+
+test('Der Dokument-Proxy reicht Unterpfad, Query, Formate und Upstream-Fehler durch', async t => {
+    const clientFetch = globalThis.fetch;
+    const query = '?feature=abc:123&lang=de&extra=%2F%26%2B+%C3%A4&crs=EPSG%3A4326&lang=fr';
+    const xlsxType = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+    const disposition = "attachment; filename*=UTF-8''Auswertung%20SO.xlsx";
+    const bytes = Uint8Array.of(0x50, 0x4b, 0x03, 0x04, 0x00, 0xff);
+    const cases = [
+        ['foo%20bar/report.xlsx' + query, new Response(bytes, {
+            headers: {'Content-Type': xlsxType, 'Content-Disposition': disposition, 'Set-Cookie': 'example=value'}
+        }), 200],
+        ['missing', new Response('Report fehlt', {status: 404}), 404],
+        ['invalid', new Response('Parameter fehlen', {status: 400}), 400],
+        ['unreachable', new Error('Simulierter Verbindungsfehler'), 502]
+    ];
+    let nextResponse = 0;
+    const upstreamFetch = t.mock.method(globalThis, 'fetch', async () => {
+        const [, response] = cases[nextResponse++];
+        if (response instanceof Error) throw response;
+        return response;
+    });
+    const logError = t.mock.method(console, 'error', () => {});
+    const port = process.env.PORT;
+    process.env.PORT = '0';
+    const {default: server} = await import('../server.mjs').finally(() => {
+        if (port === undefined) delete process.env.PORT;
+        else process.env.PORT = port;
+    });
+    await once(server, 'listening');
+    t.after(() => server.close());
+    const origin = 'http://127.0.0.1:' + server.address().port;
+    const reportPath = '/api/embed/v2/api/v1/document/';
+    for (const path of ['../featureinfo/somap', '%252e%252e/other', 'folder%252f..%252fother']) {
+        const status = await new Promise((resolve, reject) => {
+            get(origin, {path: reportPath + path}, response => {
+                response.resume();
+                resolve(response.statusCode);
+            }).on('error', reject);
+        });
+        assert.equal(status, 404, path);
+    }
+    assert.equal(upstreamFetch.mock.callCount(), 0);
+
+    for (const [path, upstream, status] of cases) {
+        const response = await clientFetch(origin + reportPath + path, {
+            headers: {Cookie: 'session=synthetic', Authorization: 'Bearer synthetic'}
+        });
+        assert.equal(response.status, status, path);
+        if (status === 200) {
+            assert.equal(response.headers.get('Content-Type'), xlsxType);
+            assert.equal(response.headers.get('Content-Disposition'), disposition);
+            assert.equal(response.headers.get('Set-Cookie'), null);
+            assert.match(response.headers.get('Content-Security-Policy'), /^sandbox;/);
+            assert.deepEqual(new Uint8Array(await response.arrayBuffer()), bytes);
+        } else if (status === 502) {
+            assert.match(await response.text(), /vorübergehend nicht verfügbar/);
+        } else {
+            assert.equal(response.headers.get('Content-Type'), upstream.headers.get('Content-Type'));
+            assert.equal(response.headers.get('Content-Disposition'), null);
+            assert.equal(await response.text(), status === 404 ? 'Report fehlt' : 'Parameter fehlen');
+        }
+    }
+    assert.equal(upstreamFetch.mock.callCount(), cases.length);
+    for (const [index, {arguments: [target, options]}] of upstreamFetch.mock.calls.entries()) {
+        assert.equal(target, 'https://geo.so.ch/api/v1/document/' + cases[index][0]);
+        assert.equal(options.redirect, 'error');
+        assert.equal(options.headers, undefined);
+        assert.equal(options.method, undefined);
+    }
+    assert.equal(logError.mock.callCount(), 1);
+    assert.equal(logError.mock.calls[0].arguments[0], cases.at(-1)[1]);
 });
 
 const parcel = 'ch.so.agi.av.grundstuecke';
@@ -240,9 +313,10 @@ test('Fremd-Origin und kleines iframe zeigen mehrere Objektinformationen und lad
     const download = page.waitForEvent('download');
     await link.tap();
     const report = await download;
-    assert.equal(report.suggestedFilename(), 'grundstuecksbeschrieb.pdf');
+    assert.match(report.suggestedFilename(), /grundstuecksbeschrieb\.pdf$/);
     const pdf = await readFile(await report.path());
     assert.equal(pdf.subarray(0, 5).toString(), '%PDF-');
+    assert.match(pdf.subarray(-32).toString(), /%%EOF\s*$/);
     await frame.getByTitle('Schliessen', {exact: true}).tap();
     await frame.getByText('Objektinformationen', {exact: true}).waitFor({state: 'hidden'});
 });

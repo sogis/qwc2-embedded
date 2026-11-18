@@ -8,8 +8,6 @@ const dataproductPath = 'api/dataproduct/v1/';
 const documentPath = 'api/v1/document/';
 const mapPath = 'ows/somap';
 const identifyPath = 'api/v1/featureinfo/somap';
-const reportPath = /^api\/v1\/document\/(?:[\w-]+\/)*[\w-]+\.pdf$/;
-const reportQuery = new Set(['feature', 'x', 'y', 'crs', 'single_report']);
 const backgrounds = new Set(['hintergrundkarte_sw', 'hintergrundkarte_farbig', 'hintergrundkarte_ortho']);
 const tiles = new RegExp(String.raw`^api/wmts/1\.0\.0/ch\.so\.agi\.(?:${[...backgrounds].join('|')})/default/2056/\d+/\d+/\d+\.png$`);
 const mapQuery = new Set('service request version layers styles format transparent width height bbox crs srs dpi format_options map_resolution opacities tiled __t'.split(' '));
@@ -87,19 +85,10 @@ function themesForEmbed({themes}) {
     return {themes};
 }
 
-function serviceQuery(route, parameters, report, tile) {
+function serviceQuery(route, parameters, tile) {
     if (tile) return parameters.size ? null : '';
     if (route === dataproductPath + 'weblayers') {
         return parameters.size === 1 && parameters.get('filter') ? '?' + parameters : null;
-    }
-    if (report) {
-        const {feature, x, y, crs, single_report: single} = Object.fromEntries(parameters);
-        if (parameters.size !== new Set(parameters.keys()).size ||
-            ![...parameters.keys()].every(key => reportQuery.has(key)) ||
-            !/^[\w.-]+$/.test(feature ?? '') || crs !== 'EPSG:2056' ||
-            ![x, y].every(value => value?.trim() && Number.isFinite(Number(value))) ||
-            (single !== undefined && single !== 'true' && single !== 'false')) return null;
-        return '?' + parameters;
     }
     const allowed = route === mapPath ? mapQuery : identifyQuery;
     const request = route === mapPath ? 'getmap' : 'getfeatureinfo';
@@ -119,13 +108,32 @@ async function upstream(path) {
     return fetch(geo + '/' + path, {redirect: 'error', signal: AbortSignal.timeout(20_000)});
 }
 
-createServer(async (req, res) => {
+export default createServer(async (req, res) => {
     try {
         const url = new URL(req.url, 'http://localhost');
         if (!url.pathname.startsWith(prefix)) return res.writeHead(404).end();
         if (req.method !== 'GET') return res.writeHead(405, {Allow: 'GET'}).end();
         const route = url.pathname.slice(prefix.length);
         res.setHeader('X-Content-Type-Options', 'nosniff');
+        const rawPath = req.url.split('?', 1)[0];
+        const documentRoot = prefix + documentPath.slice(0, -1);
+        if (rawPath === documentRoot || rawPath.startsWith(documentRoot + '/')) {
+            // Reject path delimiters and dot segments that another decoder could normalize.
+            if (rawPath !== url.pathname || /%(?:25)*(?:2f|5c)|(?:^|\/)(?:\.|%(?:25)*2e){1,2}(?=\/|$)/i.test(rawPath)) {
+                return res.writeHead(404).end();
+            }
+            const source = await upstream(route + req.url.slice(rawPath.length));
+            for (const header of ['Content-Type', 'Content-Disposition']) {
+                const value = source.headers.get(header);
+                if (value !== null) res.setHeader(header, value);
+            }
+            res.setHeader('Cache-Control', 'no-store');
+            res.setHeader('Content-Security-Policy', "sandbox; default-src 'none'");
+            res.writeHead(source.status);
+            if (source.body) await pipeline(source.body, res);
+            else res.end();
+            return;
+        }
         if (Object.hasOwn(staticFiles, route)) {
             if (route === 'index.html') {
                 res.setHeader('Content-Security-Policy', viewerPolicy);
@@ -142,26 +150,20 @@ createServer(async (req, res) => {
             const config = route === 'config.json' ? configForEmbed(data) : themesForEmbed(data);
             return res.writeHead(200, {'Content-Type': 'application/json'}).end(JSON.stringify(config));
         }
-        const report = reportPath.test(route);
         const tile = tiles.test(route);
-        if (route !== mapPath && route !== identifyPath && route !== dataproductPath + 'weblayers' && !tile && !report) {
+        if (route !== mapPath && route !== identifyPath && route !== dataproductPath + 'weblayers' && !tile) {
             return res.writeHead(404).end();
         }
-        const query = serviceQuery(route, url.searchParams, report, tile);
+        const query = serviceQuery(route, url.searchParams, tile);
         if (query === null) return res.writeHead(400).end();
         const source = await upstream(route + query);
         const contentType = source.headers.get('content-type')?.split(';')[0].trim();
-        const expectedTypes = report ? ['application/pdf'] :
-            route === identifyPath ? ['text/xml', 'application/xml'] :
+        const expectedTypes = route === identifyPath ? ['text/xml', 'application/xml'] :
             route === dataproductPath + 'weblayers' ? ['application/json'] : ['image/png', 'image/jpeg'];
         if (!source.ok || !expectedTypes.includes(contentType)) {
             await source.body?.cancel();
             return res.writeHead(source.ok ? 502 : source.status, {'Content-Type': 'text/plain; charset=utf-8'})
-                .end(report ? 'Das Objektblatt konnte nicht geladen werden.' : 'Der öffentliche SO!GIS-Dienst konnte die Anfrage nicht beantworten.');
-        }
-        if (report) {
-            res.setHeader('Content-Disposition', `attachment; filename="${route.split('/').at(-1)}"`);
-            res.setHeader('Cache-Control', 'no-store');
+                .end('Der öffentliche SO!GIS-Dienst konnte die Anfrage nicht beantworten.');
         }
         res.writeHead(source.status, {'Content-Type': source.headers.get('content-type')});
         if (source.body) await pipeline(source.body, res);

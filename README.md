@@ -27,7 +27,7 @@ Sobald der Container lauscht, ist die Karte unter `http://localhost:8080/api/emb
 | `c` | Mittelpunkt in EPSG:2056, standardmässig `2616500,1237000`. |
 | `s` | Massstabsnenner, standardmässig `378000`. Ein gesetztes `c` oder `s` wirkt unabhängig vom jeweils anderen Wert. |
 
-QWC2 aktualisiert die URL bei Kartenbewegungen. **In geo.so.ch/map ansehen** überträgt den Ausschnitt und die Ebenen. Ein Kartenklick fragt die sichtbaren, abfragbaren SO!GIS-Ebenen ab. Im kleinen iframe sind längere Ergebnisse scrollbar. Objektblätter des SO!GIS-Dokumentdiensts werden als PDF heruntergeladen.
+QWC2 aktualisiert die URL bei Kartenbewegungen. **In geo.so.ch/map ansehen** überträgt den Ausschnitt und die Ebenen. Ein Kartenklick fragt die sichtbaren, abfragbaren SO!GIS-Ebenen ab. Im kleinen iframe sind längere Ergebnisse scrollbar. Der Proxy leitet den öffentlichen SO!GIS-Dokumentdienst formatunabhängig durch. Der Dokumentdienst entscheidet über Reports, Parameter und Auslieferungsformat.
 
 Der historische Parameter `z` hatte im Vorgänger keine aktive Wirkung. Externe WMS müssen direkt vom Browser als WMS-1.3.0-Kartenbild für EPSG:2056 erreichbar sein. Identify und Capabilities-Anfragen entfallen für externe WMS. In einem HTTPS-iframe kann der Browser einen HTTP-Bildendpunkt auf HTTPS umstellen oder blockieren.
 
@@ -41,7 +41,7 @@ npm test
 
 Die Tests erwarten den laufenden Container. `EMBED_ORIGIN=http://localhost:8081 npm test` wählt einen anderen Port. Für die Entwicklung ohne Docker stehen unter Node.js 22 `npm run build` und `npm start` zur Verfügung. Der Server liest den Port aus `PORT`.
 
-Die Tests nutzen Live-Kartenbilder, dynamische Layer, den Geodienste-WMS, Identify und den PDF-Dienst. Sie prüfen zudem die fremde iframe-Origin, den Vollkartenlink, abgewiesene Proxy-Anfragen und simulierte Konfigurationsausfälle. Ausfälle der öffentlichen Dienste können Live-Tests fehlschlagen lassen.
+Die Tests nutzen Live-Kartenbilder, dynamische Layer, den Geodienste-WMS, Identify und den Dokumentdienst. Sie prüfen zudem die fremde iframe-Origin, den Vollkartenlink, abgewiesene Proxy-Anfragen und simulierte Konfigurationsausfälle. Ausfälle der öffentlichen Dienste können Live-Tests fehlschlagen lassen.
 
 ## Integration
 
@@ -55,4 +55,4 @@ location ^~ /api/embed/v2/ {
 }
 ```
 
-Die Route erlaubt fremde iframe-Origins über `frame-ancestors *`. Ein vom Ingress ergänztes `X-Frame-Options` oder restriktiveres `frame-ancestors` kann solche Einbettungen blockieren. Ein `sandbox`-Attribut auf dem iframe muss Skripte und die eigene Origin zulassen. Für den Vollkartenlink und den PDF-Download muss es auch Popups beziehungsweise Downloads zulassen.
+Die Route erlaubt fremde iframe-Origins über `frame-ancestors *`. Ein vom Ingress ergänztes `X-Frame-Options` oder restriktiveres `frame-ancestors` kann solche Einbettungen blockieren. Ein `sandbox`-Attribut auf dem iframe muss Skripte und die eigene Origin zulassen. Für den Vollkartenlink und Dokumentdownloads muss es auch Popups beziehungsweise Downloads zulassen.
