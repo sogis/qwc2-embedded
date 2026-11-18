@@ -253,3 +253,18 @@ for (const name of ['config.json', 'themes.json']) {
         assert.equal(await page.locator('.ol-layer canvas').count(), 0);
     });
 }
+
+test('Externer WMS behält einen gegebenen Query-Parameter unverändert', async t => {
+    const browser = await chromium.launch();
+    t.after(() => browser.close());
+    const page = await browser.newPage();
+    const layer = external.replace('#', '?language=de#');
+    const image = page.waitForResponse(response => response.ok() && response.url().startsWith('https://wfs.geodienste.ch/') &&
+        response.headers()['content-type']?.startsWith('image/'));
+    await page.goto(entry({l: layer, c: '2600779,1215505', s: '22694'}));
+    const params = new URL((await image).url()).searchParams;
+    assert.equal(params.get('language'), 'de');
+    assert.equal(params.has('LANGUAGE'), false);
+    assert.equal(params.get('LAYERS'), 'Hoheitsgrenzen');
+    await page.waitForFunction(layer => new URL(location.href).searchParams.get('l') === layer, layer);
+});

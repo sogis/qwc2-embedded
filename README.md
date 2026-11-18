@@ -8,7 +8,7 @@ Anonymer SO!GIS-Kartenviewer für iframes. Der Einstieg bleibt `/api/embed/v2/in
 docker compose up -d --build
 ```
 
-Die Karte ist unter `http://localhost:8080/api/embed/v2/index.html` erreichbar. Mit `EMBED_PORT=8081` lässt sich der lokale Port wechseln. Der Container benötigt ausgehenden HTTPS-Zugriff auf `geo.so.ch`.
+Sobald der Container lauscht, ist die Karte unter `http://localhost:8080/api/embed/v2/index.html` erreichbar. Mit `EMBED_PORT=8081` lässt sich der lokale Port wechseln. Der Container benötigt ausgehenden HTTPS-Zugriff auf `geo.so.ch`.
 
 ```html
 <iframe

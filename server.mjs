@@ -54,7 +54,9 @@ function configForEmbed(config) {
         documentServiceUrl: prefix + documentPath,
         username: null,
         user_infos: {},
-        allowFractionalZoom: true
+        allowFractionalZoom: true,
+        // These public services are exposed by the proxy as GET routes.
+        wmsMaxGetUrlLength: Number.MAX_SAFE_INTEGER
     };
 }
 
@@ -84,12 +86,12 @@ function themesForEmbed({themes}) {
     return {themes};
 }
 
-function serviceQuery(route, parameters) {
-    if (tiles.test(route)) return parameters.size ? null : '';
+function serviceQuery(route, parameters, report, tile) {
+    if (tile) return parameters.size ? null : '';
     if (route === dataproductPath + 'weblayers') {
         return parameters.size === 1 && parameters.get('filter') ? '?' + parameters : null;
     }
-    if (reportPath.test(route)) {
+    if (report) {
         const {feature, x, y, crs, single_report: single} = Object.fromEntries(parameters);
         if (parameters.size !== new Set(parameters.keys()).size ||
             ![...parameters.keys()].every(key => reportQuery.has(key)) ||
@@ -140,10 +142,11 @@ createServer(async (req, res) => {
             return res.writeHead(200, {'Content-Type': 'application/json'}).end(JSON.stringify(config));
         }
         const report = reportPath.test(route);
-        if (route !== mapPath && route !== identifyPath && route !== dataproductPath + 'weblayers' && !tiles.test(route) && !report) {
+        const tile = tiles.test(route);
+        if (route !== mapPath && route !== identifyPath && route !== dataproductPath + 'weblayers' && !tile && !report) {
             return res.writeHead(404).end();
         }
-        const query = serviceQuery(route, url.searchParams);
+        const query = serviceQuery(route, url.searchParams, report, tile);
         if (query === null) return res.writeHead(400).end();
         const source = await upstream(route + query);
         const contentType = source.headers.get('content-type')?.split(';')[0].trim();
@@ -153,7 +156,7 @@ createServer(async (req, res) => {
         if (!source.ok || !expectedTypes.includes(contentType)) {
             await source.body?.cancel();
             return res.writeHead(source.ok ? 502 : source.status, {'Content-Type': 'text/plain; charset=utf-8'})
-                .end('Der öffentliche SO!GIS-Dienst konnte die Anfrage nicht beantworten.');
+                .end(report ? 'Das Objektblatt konnte nicht geladen werden.' : 'Der öffentliche SO!GIS-Dienst konnte die Anfrage nicht beantworten.');
         }
         if (report) {
             res.setHeader('Content-Disposition', `attachment; filename="${route.split('/').at(-1)}"`);

@@ -47,7 +47,7 @@ function updateFullMap() {
     fullMap.href = target.href;
 }
 updateFullMap();
-fullMap.addEventListener('click', updateFullMap);
+for (const event of ['click', 'auxclick', 'contextmenu']) fullMap.addEventListener(event, updateFullMap);
 
 axios.interceptors.response.use(undefined, error => {
     if (['config.json', 'themes.json'].includes(error.config?.url)) {
@@ -82,8 +82,15 @@ function externalLayerRestorer(externalLayers, themes, callback) {
             for (const layer of layers) StandardApp.store.dispatch(removeLayer(layer.id));
             continue;
         }
+        // Keep an endpoint query (e.g. a case-sensitive vendor parameter) verbatim.
+        // QWC2 otherwise copies its keys in upper case into the WMS request.
+        const query = service.search ? {
+            sourceConfig: {url: endpoint},
+            dimensionValues: Object.fromEntries([...service.searchParams.keys()].map(key => [key.toUpperCase(), undefined]))
+        } : {};
         for (const layer of layers) {
             callback(layer.id, {
+                ...query,
                 ...layer,
                 type: 'wms',
                 url: endpoint,

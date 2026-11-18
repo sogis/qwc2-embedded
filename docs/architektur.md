@@ -36,6 +36,7 @@ Alle Reviews laufen unabhängig mit OpenCode 2.0.28 und `deepseek/deepseek-flash
 | E1 | `7a5cd34ef8c1802666d40d214096c9cd6e612382` | **PASS.** Eigenständiger Build, Live-Kartenbilder und die Proxy-Grenzen verifiziert. Der Review hielt den Browser-Direktzugriff auf den Dokumentdienst zur Korrektur in E3 fest sowie die URL- und Browser-Kompatibilität für E2. |
 | E2 | `2bd787827f5290465207d325f29ac699fde883f6` | **PASS.** Der unabhängige Browserdurchlauf mass für `s=4347` 1,1501 m/Pixel, auch nach Reload, und bestätigte den Vollkartenlink. |
 | E3 | `5d74f3f2686c8636eb64d284732a2ae2bb3f217d` | **PASS.** Im 265 × 174 px grossen iframe bestätigte der Review zwei native HTML-Ergebnisse, gültige PDF-Daten und elf Negativfälle der Dokumentroute. |
+| E4 | `9df69335b1079d6f4b1dfa20b5b0d4a6553cce45` | **PASS.** Separater Compose-Betrieb, 7/7 Tests, gültige CSP und anonymer Identify-Aufruf aus einem fremden Origin. |
 
 Der Zoombereich folgt den Live-WMTS-Auflösungen, die mit dem alten Kartenviewer übereinstimmen. Ein erforderlicher Zwischenmassstab wird als zusätzlicher Startwert eingefügt. QWC2 interpoliert Bruchzooms linear, OpenLayers logarithmisch. Deshalb korrigiert der Bootstrap den Wert `s` in der bestehenden QWC2-URL-Warteschlange anhand der tatsächlich angezeigten Auflösung. Der Vollkartenlink liest diese Auflösung und den Kartenmittelpunkt direkt bei Aktivierung, auch vor der verzögerten URL-Aktualisierung.
 
@@ -46,3 +47,9 @@ QWC2 Identify zeigt die vom öffentlichen SO!GIS-FeatureInfo gelieferte HTML-Tab
 Der Minimal-Build umfasst 2'565'264 Byte JavaScript (771'013 Byte bei lokaler gzip-Komprimierung) und 63'409 Byte CSS. Der Node-Container liefert die Dateien lokal unkomprimiert aus. Drei Chromium-Starts in neuen Browser-Kontexten gegen Docker Compose benötigten vom Seitenaufruf bis zum ersten sichtbaren Orthofoto-Pixel 1,51 s, 1,28 s und 1,31 s. Der erste WMS-Response war nach 0,83 s, 0,66 s und 0,69 s eingetroffen. Die Werte enthalten Live-Netzwerkzugriffe und sind keine Produktionsmessung.
 
 Die automatisierte Suite prüft einen iframe auf einem separaten lokalen HTTP-Origin. In einer manuellen Chromium-Gegenprobe über zwei lokale HTTPS-Origins mit einem temporären Zertifikat erschien derselbe externe Geodienste-WMS als direktes `GetMap`-Bild. Eine `http:`-Referenz auf diesen WMS stufte Chromium auf HTTPS hoch. Das Browser-Verhalten lässt sich für einen HTTP-only-Dienst nicht zusichern. Weiter bestätigte eine instrumentierte Live-Anfrage auf der Node-Grenze, dass eingehende synthetische `Cookie`- und `Authorization`-Header bei Config, Themes und weblayers im Upstream-Request fehlten.
+
+## Abschliessende Vereinfachung
+
+Der Bootstrap registriert die zwei QWC2-Plugins und ergänzt ihre bestehenden Hooks für Live-Layer, WMS-Endpunkte und den Startmassstab. Die URL-Warteschlange, Kartendarstellung, Ergebnisliste und Downloads laufen über QWC2 beziehungsweise den Browser. Der Vollkartenlink bleibt ein HTML-Link. Der Proxy verwendet ausschliesslich Node.js-Bordmittel. Die direkte `lodash.isempty`-Abhängigkeit entfiel, da QWC2 sie selbst deklariert.
+
+Der gebaute Stand umfasst 2'565'447 Byte JavaScript (771'096 Byte mit gzip). Ein Browser-Test zeigt, dass ein einzelner Query-Parameter eines externen WMS in ursprünglicher Schreibweise ankommt. Eine gesonderte Probe mit dem SO!GIS-Identify-XML und simuliertem `inline="0"` bestätigte natives HTML in einem QWC2-Ergebnisiframe unter der CSP. `frame-src about:` ermöglicht diesen Anzeigepfad.
