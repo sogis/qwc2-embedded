@@ -3,6 +3,7 @@ import {createServer} from 'node:http';
 import {pipeline} from 'node:stream/promises';
 
 const prefix = '/api/embed/v2/';
+const forwardedPrefix = prefix.slice(0, -1);
 const geo = 'https://geo.so.ch';
 const dataproductPath = 'api/dataproduct/v1/';
 const documentPath = 'api/v1/document/';
@@ -116,25 +117,32 @@ async function upstream(path) {
 
 export default createServer(async (req, res) => {
     try {
-        const url = new URL(req.url, 'http://localhost');
+        let requestTarget = req.url;
+        let url = new URL(requestTarget, 'http://localhost');
         if (req.method === 'GET' && url.pathname === '/ping') {
             return res.writeHead(200, {'Content-Type': 'text/plain; charset=utf-8'}).end('pong');
         }
         if (req.method === 'GET' && healthPaths.has(url.pathname)) {
             return res.writeHead(200, {'Content-Type': 'application/json'}).end('{"status":"UP"}');
         }
+        if (req.headers['x-forwarded-prefix'] === forwardedPrefix &&
+            requestTarget.startsWith('/') && !requestTarget.startsWith('//') &&
+            !requestTarget.startsWith(prefix) && !url.pathname.startsWith(prefix)) {
+            requestTarget = forwardedPrefix + requestTarget;
+            url = new URL(requestTarget, 'http://localhost');
+        }
         if (!url.pathname.startsWith(prefix)) return res.writeHead(404).end();
         if (req.method !== 'GET') return res.writeHead(405, {Allow: 'GET'}).end();
         const route = url.pathname.slice(prefix.length);
         res.setHeader('X-Content-Type-Options', 'nosniff');
-        const rawPath = req.url.split('?', 1)[0];
+        const rawPath = requestTarget.split('?', 1)[0];
         const documentRoot = prefix + documentPath.slice(0, -1);
         if (rawPath === documentRoot || rawPath.startsWith(documentRoot + '/')) {
             // Reject path delimiters and dot segments that another decoder could normalize.
             if (rawPath !== url.pathname || /%(?:25)*(?:2f|5c)|(?:^|\/)(?:\.|%(?:25)*2e){1,2}(?=\/|$)/i.test(rawPath)) {
                 return res.writeHead(404).end();
             }
-            const source = await upstream(route + req.url.slice(rawPath.length));
+            const source = await upstream(route + requestTarget.slice(rawPath.length));
             for (const header of ['Content-Type', 'Content-Disposition']) {
                 const value = source.headers.get(header);
                 if (value !== null) res.setHeader(header, value);

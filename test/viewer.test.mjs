@@ -6,6 +6,16 @@ import {test} from 'node:test';
 import {chromium} from 'playwright';
 
 const embed = new URL('/api/embed/v2/index.html', process.env.EMBED_ORIGIN ?? 'http://localhost:8080');
+const forwardedPrefixHeaders = {'X-Forwarded-Prefix': '/api/embed/v2'};
+
+function rawStatus(origin, path, headers) {
+    return new Promise((resolve, reject) => {
+        get(origin, {path, headers}, response => {
+            response.resume();
+            resolve(response.statusCode);
+        }).on('error', reject);
+    });
+}
 
 test('Der Container bedient die bisherigen Health-Probes und die Embed-URL', async () => {
     for (const path of ['/actuator/health', '/actuator/health/livenessState', '/actuator/health/readinessState']) {
@@ -26,6 +36,31 @@ test('Der Container bedient die bisherigen Health-Probes und die Embed-URL', asy
     assert.match(await index.text(), /<title>SO!GIS Karte<\/title>/);
 });
 
+test('Der Container akzeptiert gekürzte Embed-Pfade mit dem festen nginx-Header', async () => {
+    const direct = await fetch(embed);
+    assert.equal(direct.status, 200);
+    const html = await direct.text();
+    for (const path of ['/index.html', embed.pathname]) {
+        const response = await fetch(new URL(path, embed), {headers: forwardedPrefixHeaders, redirect: 'manual'});
+        assert.equal(response.status, 200, path);
+        assert.equal(await response.text(), html, path);
+    }
+
+    for (const headers of [{}, {'X-Forwarded-Prefix': '/api/embed/v2/'},
+        {'X-Forwarded-Prefix': ['/api/embed/v2', '/api/embed/v2']}]) {
+        assert.equal(await rawStatus(embed.origin, '/index.html', headers), 404);
+    }
+    for (const path of ['//localhost/index.html', 'http://localhost/index.html', '/unknown.html']) {
+        assert.equal(await rawStatus(embed.origin, path, forwardedPrefixHeaders), 404, path);
+    }
+    const response = await fetch(new URL('/config.json', embed), {method: 'POST', headers: forwardedPrefixHeaders});
+    assert.equal(response.status, 405);
+    assert.equal(response.headers.get('allow'), 'GET');
+    for (const path of ['/ping', '/actuator/health', '/actuator/health/livenessState', '/actuator/health/readinessState']) {
+        assert.equal(await rawStatus(embed.origin, path, forwardedPrefixHeaders), 200, path);
+    }
+});
+
 test('Die Embed-Seite zeichnet Live-WMTS und dynamische SO!GIS-Ebenen', async t => {
     const browser = await chromium.launch();
     t.after(() => browser.close());
@@ -36,13 +71,15 @@ test('Die Embed-Seite zeichnet Live-WMTS und dynamische SO!GIS-Ebenen', async t 
     page.on('request', request => {
         if (new URL(request.url()).origin !== embed.origin) unexpected.push(request.url());
     });
+    const assets = ['viewer.js', 'viewer.css'].map(file =>
+        page.waitForResponse(response => response.ok() && response.url() === new URL(file, embed).href));
     const orthophoto = page.waitForResponse(response => response.ok() && response.url().includes('/ch.so.agi.hintergrundkarte_ortho/'));
     const mapImage = page.waitForResponse(response => response.ok() && response.url().includes('/ows/somap?'));
     const weblayers = page.waitForResponse(response => response.ok() && response.url().includes('/weblayers?'));
     const url = new URL(embed);
     url.search = new URLSearchParams({bl: 'ch.so.agi.hintergrundkarte_ortho', l: 'ch.so.agi.av.grundstuecke', c: '2607739,1228426', s: '2000'});
     await page.goto(url.href);
-    const [tile, map, layers] = await Promise.all([orthophoto, mapImage, weblayers]);
+    const [tile, map, layers] = await Promise.all([orthophoto, mapImage, weblayers, ...assets]);
     for (const response of [tile, map]) {
         const image = await response.body();
         const signature = image.subarray(0, 8).toString('hex');
@@ -103,9 +140,9 @@ test('Der Dokument-Proxy reicht Unterpfad, Query, Formate und Upstream-Fehler du
     ];
     let nextResponse = 0;
     const upstreamFetch = t.mock.method(globalThis, 'fetch', async () => {
-        const [, response] = cases[nextResponse++];
+        const [, response] = cases[nextResponse++ % cases.length];
         if (response instanceof Error) throw response;
-        return response;
+        return response.clone();
     });
     const logError = t.mock.method(console, 'error', () => {});
     const port = process.env.PORT;
@@ -117,46 +154,48 @@ test('Der Dokument-Proxy reicht Unterpfad, Query, Formate und Upstream-Fehler du
     await once(server, 'listening');
     t.after(() => server.close());
     const origin = 'http://127.0.0.1:' + server.address().port;
-    const reportPath = '/api/embed/v2/api/v1/document/';
-    for (const path of ['../featureinfo/somap', '%252e%252e/other', 'folder%252f..%252fother']) {
-        const status = await new Promise((resolve, reject) => {
-            get(origin, {path: reportPath + path}, response => {
-                response.resume();
-                resolve(response.statusCode);
-            }).on('error', reject);
-        });
-        assert.equal(status, 404, path);
-    }
-    assert.equal(upstreamFetch.mock.callCount(), 0);
+    const variants = [
+        ['/api/embed/v2/api/v1/document/', {}],
+        ['/api/v1/document/', forwardedPrefixHeaders]
+    ];
+    for (const [reportPath, headers] of variants) {
+        const callsBefore = upstreamFetch.mock.callCount();
+        for (const path of ['../featureinfo/somap', '%252e%252e/other', 'folder%252f..%252fother']) {
+            assert.equal(await rawStatus(origin, reportPath + path, headers), 404, reportPath + path);
+        }
+        assert.equal(upstreamFetch.mock.callCount(), callsBefore);
 
-    for (const [path, upstream, status] of cases) {
-        const response = await clientFetch(origin + reportPath + path, {
-            headers: {Cookie: 'session=synthetic', Authorization: 'Bearer synthetic'}
-        });
-        assert.equal(response.status, status, path);
-        if (status === 200) {
-            assert.equal(response.headers.get('Content-Type'), xlsxType);
-            assert.equal(response.headers.get('Content-Disposition'), disposition);
-            assert.equal(response.headers.get('Set-Cookie'), null);
-            assert.match(response.headers.get('Content-Security-Policy'), /^sandbox;/);
-            assert.deepEqual(new Uint8Array(await response.arrayBuffer()), bytes);
-        } else if (status === 502) {
-            assert.match(await response.text(), /vorübergehend nicht verfügbar/);
-        } else {
-            assert.equal(response.headers.get('Content-Type'), upstream.headers.get('Content-Type'));
-            assert.equal(response.headers.get('Content-Disposition'), null);
-            assert.equal(await response.text(), status === 404 ? 'Report fehlt' : 'Parameter fehlen');
+        for (const [path, upstream, status] of cases) {
+            const response = await clientFetch(origin + reportPath + path, {
+                headers: {...headers, Cookie: 'session=synthetic', Authorization: 'Bearer synthetic'}
+            });
+            assert.equal(response.status, status, path);
+            if (status === 200) {
+                assert.equal(response.headers.get('Content-Type'), xlsxType);
+                assert.equal(response.headers.get('Content-Disposition'), disposition);
+                assert.equal(response.headers.get('Set-Cookie'), null);
+                assert.match(response.headers.get('Content-Security-Policy'), /^sandbox;/);
+                assert.deepEqual(new Uint8Array(await response.arrayBuffer()), bytes);
+            } else if (status === 502) {
+                assert.match(await response.text(), /vorübergehend nicht verfügbar/);
+            } else {
+                assert.equal(response.headers.get('Content-Type'), upstream.headers.get('Content-Type'));
+                assert.equal(response.headers.get('Content-Disposition'), null);
+                assert.equal(await response.text(), status === 404 ? 'Report fehlt' : 'Parameter fehlen');
+            }
         }
     }
-    assert.equal(upstreamFetch.mock.callCount(), cases.length);
+    assert.equal(upstreamFetch.mock.callCount(), cases.length * variants.length);
     for (const [index, {arguments: [target, options]}] of upstreamFetch.mock.calls.entries()) {
-        assert.equal(target, 'https://geo.so.ch/api/v1/document/' + cases[index][0]);
+        assert.equal(target, 'https://geo.so.ch/api/v1/document/' + cases[index % cases.length][0]);
         assert.equal(options.redirect, 'error');
         assert.equal(options.headers, undefined);
         assert.equal(options.method, undefined);
     }
-    assert.equal(logError.mock.callCount(), 1);
-    assert.equal(logError.mock.calls[0].arguments[0], cases.at(-1)[1]);
+    assert.equal(logError.mock.callCount(), variants.length);
+    for (const call of logError.mock.calls) {
+        assert.equal(call.arguments[0], cases.at(-1)[1]);
+    }
 });
 
 const parcel = 'ch.so.agi.av.grundstuecke';
