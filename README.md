@@ -71,11 +71,20 @@ Die Tests nutzen Live-Kartenbilder, dynamische Layer, den Geodienste-WMS, Identi
 
 Der einzelne Container bündelt `qwc2-lts` mit Map und Identify. Er passt die öffentliche Konfiguration zur Laufzeit an und leitet nur die benötigten Lesepfade an `https://geo.so.ch` weiter. Browser-Cookies und Authorization-Header werden upstream verworfen. Die [Architekturentscheidung und Phasenreviews](docs/architektur.md) dokumentieren den Vergleich mit dem veröffentlichten SO!GIS-Image.
 
-Bei einer späteren Umschaltung muss der HTTPS-Ingress den **gesamten** Präfix `/api/embed/v2/` unverändert an den Dienst weiterleiten. Für nginx lautet die Regel beispielsweise:
+Der HTTPS-Ingress kann den vollständigen Pfad unter `/api/embed/v2/` weiterleiten. In nginx bleibt der Präfix erhalten, wenn `proxy_pass` ohne abschliessenden Slash angegeben wird.
 
 ```nginx
 location ^~ /api/embed/v2/ {
     proxy_pass http://embed:8080;
+}
+```
+
+Die bestehende OpenShift-Regel mit abschliessendem Slash in `proxy_pass` funktioniert ebenfalls. nginx muss dabei `X-Forwarded-Prefix` fest auf `/api/embed/v2` setzen. Der Server ergänzt den Präfix intern. Der OpenShift-Service ist auf Port 80 erreichbar und leitet an den Pod auf Port 8080 weiter.
+
+```nginx
+location ^~ /api/embed/v2/ {
+    proxy_set_header X-Forwarded-Prefix /api/embed/v2;
+    proxy_pass http://wgc-embedded-v2.agi-apps-test.svc/;
 }
 ```
 
